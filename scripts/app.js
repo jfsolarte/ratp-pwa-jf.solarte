@@ -40,6 +40,7 @@
         }
         app.getSchedule(key, label);
         app.selectedTimetables.push({key: key, label: label});
+        app.saveSelectedTimetables();
         app.toggleAddDialog(false);
     });
 
@@ -85,6 +86,19 @@
             app.container.appendChild(card);
             app.visibleCards[key] = card;
         }
+
+        // Verifies the data provide is newer than what's already visible
+        // on the card, if it's not bail, if it is, continue and update the
+        // time saved in the card
+        var cardLastUpdatedElem = card.querySelector('.card-last-updated');
+        var cardLastUpdated = cardLastUpdatedElem.textContent;
+        if (cardLastUpdated) {
+            cardLastUpdated = new Date(cardLastUpdated);
+            // Bail if the card has more recent data then the data
+            if (dataLastUpdated.getTime() < cardLastUpdated.getTime()) {
+                return;
+            }
+        }
         card.querySelector('.card-last-updated').textContent = data.created;
 
         var scheduleUIs = card.querySelectorAll('.schedule');
@@ -112,7 +126,28 @@
 
     app.getSchedule = function (key, label) {
         var url = 'https://api-ratp.pierre-grimaud.fr/v3/schedules/' + key;
-
+        // TODO add cache logic here
+        if ('caches' in window) {
+            /*
+            * Check if the service worker has already cached this city's weather
+            * data. If the service worker has the data, then display the cached
+            * data while the app fetches the latest data.
+            */
+            caches.match(url).then(function(response) {
+            if (response) {
+                response.json().then(function updateFromCache(json) {
+                var results = json.results;
+                console.info(key);
+                var results = {};
+                results.key = key;
+                results.label = label;
+                results.created = json._metadata.date;
+                results.schedules = json.result.schedules;
+                app.updateTimetableCard(results);
+                });
+            }
+            });
+        }
         var request = new XMLHttpRequest();
         request.onreadystatechange = function () {
             if (request.readyState === XMLHttpRequest.DONE) {
@@ -168,6 +203,12 @@
 
     };
 
+    // Save list of cities to localStorage.
+    app.saveSelectedTimetables = function() {
+        var selectedTimetables = JSON.stringify(app.selectedTimetables);
+        localStorage.selectedTimetables = selectedTimetables;
+    };
+
 
     /************************************************************************
      *
@@ -180,8 +221,35 @@
      *   SimpleDB (https://gist.github.com/inexorabletash/c8069c042b734519680c)
      ************************************************************************/
 
-    app.getSchedule('metros/1/bastille/A', 'Bastille, Direction La Défense');
-    app.selectedTimetables = [
-        {key: initialStationTimetable.key, label: initialStationTimetable.label}
-    ];
+    
+
+    app.selectedTimetables = localStorage.selectedTimetables;
+    if (app.selectedTimetables) {
+        app.selectedTimetables = JSON.parse(app.selectedTimetables);
+        app.selectedTimetables.forEach(function(time) {
+        app.getSchedule(time.key, time.label);
+        });
+    } else {
+        /* The user is using the app for the first time, or the user has not
+        * saved any cities, so show the user some fake data. A real app in this
+        * scenario could guess the user's location via IP lookup and then inject
+        * that data into the page.
+        */
+        
+        app.updateTimetableCard(initialStationTimetable);
+        app.selectedTimetables = [
+            {key: initialStationTimetable.key, label: initialStationTimetable.label}
+        ];
+        app.saveSelectedTimetables();
+    }
+
+    // TODO add service worker code here
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker
+                .register('./service-worker.js')
+                .then(function() { console.log('Service Worker Registered'); });
+    }
+
+    
+
 })();
