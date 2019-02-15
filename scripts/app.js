@@ -111,6 +111,7 @@
         }
 
         if (app.isLoading) {
+            window.cardLoadTime = performance.now();
             app.spinner.setAttribute('hidden', true);
             app.container.removeAttribute('hidden');
             app.isLoading = false;
@@ -220,7 +221,46 @@
      *   Instead, check out IDB (https://www.npmjs.com/package/idb) or
      *   SimpleDB (https://gist.github.com/inexorabletash/c8069c042b734519680c)
      ************************************************************************/
+    if (!window.indexedDB) {
+        window.alert("Su navegador no soporta una versión estable de indexedDB. Tal y como las características no serán validas");
+    }
 
+    const dbName = "timetables";
+     
+    var request = indexedDB.open(dbName, 2);
+
+    request.onerror = function(event) {
+    // Manejar errores.
+    };
+    request.onupgradeneeded = function(event) {
+    var db = event.target.result;
+    var customerData= [{key: initialStationTimetable.key, 
+        label: initialStationTimetable.label
+        //created:initialStationTimetable.created,
+        //schedules:initialStationTimetable.schedules
+    }];
+    // Se crea un almacén para contener la información de nuestros cliente
+    // Se usará "ssn" como clave ya que es garantizado que es única
+    var objectStore = db.createObjectStore("timetables", { keyPath: "ssn" });
+
+    // Se crea un índice para buscar clientes por nombre. Se podrían tener duplicados
+    // por lo que no se puede usar un índice único.
+    objectStore.createIndex("key", "key", { unique: true });
+
+    // Se crea un índice para buscar clientespor email. Se quiere asegurar que
+    // no puedan haberdos clientes con el mismo email, asi que se usa un índice único.
+    objectStore.createIndex("label", "label", { unique: false });
+    
+    // Se usa transaction.oncomplete para asegurarse que la creación del almacén 
+    // haya finalizado antes de añadir los datos en el.
+    objectStore.transaction.oncomplete = function(event) {
+        // Guarda los datos en el almacén recién creado.
+        var customerObjectStore = db.transaction("timetables", "readwrite").objectStore("timetables");
+        for (var i in customerData) {
+        customerObjectStore.add(customerData[i]);
+        }
+    }
+    };
     
 
     app.selectedTimetables = localStorage.selectedTimetables;
